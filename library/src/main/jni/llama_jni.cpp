@@ -37,21 +37,92 @@ std::string jstr(JNIEnv *env, jstring s) {
     return out;
 }
 
+
 std::string json_escape(const std::string &in) {
     std::string o;
-    o.reserve(in.size() + 8);
-    for (char c : in) {
-        switch (c) {
-            case '"':  o += "\\\""; break;
-            case '\\': o += "\\\\"; break;
-            case '\n': o += "\\n";  break;
-            case '\r': o += "\\r";  break;
-            case '\t': o += "\\t";  break;
-            default:   o += c;      break;
+    o.reserve(in.size() + 16);
+    const char *hex = "0123456789abcdef";
+
+    auto append_u16 = [&](unsigned int cp) {
+        o += "\\u";
+        o += hex[(cp >> 12) & 0xF];
+        o += hex[(cp >> 8) & 0xF];
+        o += hex[(cp >> 4) & 0xF];
+        o += hex[cp & 0xF];
+    };
+
+    for (std::size_t i = 0; i < in.size();) {
+        unsigned char c = (unsigned char)in[i];
+
+        if (c < 0x80) {
+            switch (c) {
+                case '"':  o += "\\\""; break;
+                case '\\': o += "\\\\"; break;
+                case '\n': o += "\\n"; break;
+                case '\r': o += "\\r"; break;
+                case '\t': o += "\\t"; break;
+                default:
+                    if (c < 0x20) append_u16(c);
+                    else o += (char)c;
+                    break;
+            }
+            ++i;
+            continue;
         }
+
+        unsigned int cp = 0;
+        std::size_t n = 0;
+
+        if ((c & 0xE0) == 0xC0) {
+            cp = c & 0x1F; n = 2;
+        } else if ((c & 0xF0) == 0xE0) {
+            cp = c & 0x0F; n = 3;
+        } else if ((c & 0xF8) == 0xF0) {
+            cp = c & 0x07; n = 4;
+        }
+
+        bool valid = n != 0 && i + n <= in.size();
+
+        if (valid) {
+            for (std::size_t j = 1; j < n; ++j) {
+                unsigned char d = (unsigned char)in[i + j];
+                if ((d & 0xC0) != 0x80) {
+                    valid = false;
+                    break;
+                }
+                cp = (cp << 6) | (d & 0x3F);
+            }
+        }
+
+        if (valid && (
+            (n == 2 && cp < 0x80) ||
+            (n == 3 && cp < 0x800) ||
+            (n == 4 && cp < 0x10000) ||
+            cp > 0x10FFFF ||
+            (cp >= 0xD800 && cp <= 0xDFFF))) {
+            valid = false;
+        }
+
+        if (!valid) {
+            append_u16(0xFFFD);
+            ++i;
+            continue;
+        }
+
+        if (cp <= 0xFFFF) {
+            append_u16(cp);
+        } else {
+            cp -= 0x10000;
+            append_u16(0xD800 + (cp >> 10));
+            append_u16(0xDC00 + (cp & 0x3FF));
+        }
+
+        i += n;
     }
+
     return o;
 }
+
 
 std::vector<llama_token> tokenize(const llama_vocab *vocab, const std::string &text,
                                   bool add_special) {
