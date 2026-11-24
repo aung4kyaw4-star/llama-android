@@ -38,6 +38,7 @@ std::string jstr(JNIEnv *env, jstring s) {
 }
 
 
+
 std::string json_escape(const std::string &in) {
     std::string o;
     o.reserve(in.size() + 16);
@@ -74,11 +75,14 @@ std::string json_escape(const std::string &in) {
         std::size_t n = 0;
 
         if ((c & 0xE0) == 0xC0) {
-            cp = c & 0x1F; n = 2;
+            cp = c & 0x1F;
+            n = 2;
         } else if ((c & 0xF0) == 0xE0) {
-            cp = c & 0x0F; n = 3;
+            cp = c & 0x0F;
+            n = 3;
         } else if ((c & 0xF8) == 0xF0) {
-            cp = c & 0x07; n = 4;
+            cp = c & 0x07;
+            n = 4;
         }
 
         bool valid = n != 0 && i + n <= in.size();
@@ -122,6 +126,7 @@ std::string json_escape(const std::string &in) {
 
     return o;
 }
+
 
 
 std::vector<llama_token> tokenize(const llama_vocab *vocab, const std::string &text,
